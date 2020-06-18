@@ -8,8 +8,23 @@ variable "vpc_name" {
   type = "string"
 }
 
+# key_path
+variable "my_public_key" {
+  type = "string"
+}
+
+# Profile
+variable "profile" {
+  type = "string"
+}
+
 # VPC region
 variable "vpc_region" {
+  type = "string"
+}
+
+# Database name
+variable "db_name" {
   type = "string"
 }
 
@@ -159,6 +174,14 @@ resource "aws_security_group" "application_security_group" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+
   tags = {
     Name = "application_security_group"
   }
@@ -167,13 +190,14 @@ resource "aws_security_group" "application_security_group" {
 
 # RDS instance
 resource "aws_db_instance" "csye6225-su2020" {
+  identifier             = "csye6225-su2020"
   instance_class         = "db.t2.micro"
   engine                 = "mysql"
   multi_az               = "false"
   storage_type           = "gp2"
   allocated_storage      = 20
-  name                   = "test"
-  username               = "csye6225"
+  name                   = "${var.db_name}"
+  username               = "root"
   password               = "password"
   # apply_immediately      = "true"
   skip_final_snapshot    = "true"
@@ -242,12 +266,18 @@ resource "aws_s3_bucket" "bucket" {
     Name = "bucket"
   }
 }
+# Key pair
+resource "aws_key_pair" "ssh_key" {
+  key_name   = "aws"
+  public_key = "${var.my_public_key}"
+}
 
 # EC2 instance
 resource "aws_instance" "web" {
   depends_on = [ aws_db_instance.csye6225-su2020 ]
   ami                    = "${var.ami}"
   instance_type          = "t2.micro"
+  key_name               = "${aws_key_pair.ssh_key.id}"
   vpc_security_group_ids = ["${aws_security_group.application_security_group.id}"]
   subnet_id              = "${aws_subnet.public_subnet[0].id}"
   iam_instance_profile   = "${aws_iam_instance_profile.EC2-CSYE6225-instance-profile.name}"
@@ -257,33 +287,43 @@ resource "aws_instance" "web" {
     volume_size = "20"
   }
 
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo echo export "Bucketname=${aws_s3_bucket.bucket.bucket}" >> /etc/environment
+              sudo echo export "Bucketendpoint=${aws_s3_bucket.bucket.bucket_regional_domain_name}" >> /etc/environment
+              sudo echo export "DBhost=${aws_db_instance.csye6225-su2020.address}" >> /etc/environment
+              sudo echo export "DBendpoint=${aws_db_instance.csye6225-su2020.endpoint}" >> /etc/environment
+              sudo echo export "DBname=${var.db_name}" >> /etc/environment
+              sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
+              sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
+              sudo echo export "Profile=${var.profile}" >> /etc/environment
+              sudo echo export "Region=${var.vpc_region}" >> /etc/environment
+              EOF
+
   tags = {
-    Name = "Webapp"
+    Name = "Webapp_EC2"
   }
 }
 
 # IAM Pocily
-resource "aws_iam_role_policy" "WebAppS3" {
+resource "aws_iam_policy" "WebAppS3" {
   name = "WebAppS3"
-  role = "${aws_iam_role.EC2-CSYE6225.id}"
-
+  
   policy = <<EOF
 {
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Effect": "Allow",
-      "Action": ["s3:ListBucket"],
-      "Resource": ["arn:aws:s3:::webapp.naresh.agrawal"]
-    },
-    {
-      "Effect": "Allow",
       "Action": [
         "s3:PutObject",
         "s3:GetObject",
         "s3:DeleteObject"
       ],
-      "Resource": ["arn:aws:s3:::webapp.naresh.agrawal/*"]
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:::webapp.naresh.agrawal",
+        "arn:aws:s3:::webapp.naresh.agrawal/*"
+        ]
     }
   ]
 }
@@ -301,7 +341,8 @@ resource "aws_iam_role" "EC2-CSYE6225" {
 {
 "Action": "sts:AssumeRole",
 "Principal": {
- "Service": "ec2.amazonaws.com"
+ "Service": "ec2.amazonaws.com",
+ "Service": "s3.amazonaws.com"
 },
 "Effect": "Allow"
 }
@@ -314,7 +355,14 @@ EOF
   }
 }
 
-# IAM Profile
+# IAM Policy attachment
+resource "aws_iam_policy_attachment" "WebAppS3-attach" {
+  name       = "WebAppS3-attachment"
+  roles      = ["${aws_iam_role.EC2-CSYE6225.name}"]
+  policy_arn = "${aws_iam_policy.WebAppS3.arn}"
+}
+
+# IAM Profile Instance
 resource "aws_iam_instance_profile" "EC2-CSYE6225-instance-profile" {
   name = "EC2-CSYE6225-instance-profile"
   role = "${aws_iam_role.EC2-CSYE6225.name}"
