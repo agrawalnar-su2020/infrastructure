@@ -13,11 +13,6 @@ variable "my_public_key" {
   type = "string"
 }
 
-# Profile
-variable "profile" {
-  type = "string"
-}
-
 # VPC region
 variable "vpc_region" {
   type = "string"
@@ -199,7 +194,6 @@ resource "aws_db_instance" "csye6225-su2020" {
   name                   = "${var.db_name}"
   username               = "root"
   password               = "password"
-  # apply_immediately      = "true"
   skip_final_snapshot    = "true"
   db_subnet_group_name   = "${aws_db_subnet_group.rds-db-subnet.name}"
   vpc_security_group_ids = ["${aws_security_group.database_security_group.id}"]
@@ -217,7 +211,6 @@ resource "aws_security_group" "database_security_group" {
     from_port   = 3306
     to_port     = 3306
     protocol    = "tcp"
-    # cidr_blocks = ["0.0.0.0/0"]
     security_groups = ["${aws_security_group.application_security_group.id}"]
   }
 
@@ -232,11 +225,7 @@ resource "aws_db_subnet_group" "rds-db-subnet" {
   name       = "rds-db-subnet"
   subnet_ids = ["${aws_subnet.public_subnet[1].id}", "${aws_subnet.public_subnet[2].id}"]
 }
-# Bucket encryption
-resource "aws_kms_key" "mykey" {
-  description             = "This key is used to encrypt bucket objects"
-  deletion_window_in_days = 10
-}
+
 
 # S3 bucket
 resource "aws_s3_bucket" "bucket" {
@@ -247,8 +236,7 @@ resource "aws_s3_bucket" "bucket" {
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        kms_master_key_id = "${aws_kms_key.mykey.arn}"
-        sse_algorithm     = "aws:kms"
+        sse_algorithm     = "AES256"
       }
     }
   }
@@ -296,8 +284,6 @@ resource "aws_instance" "web" {
               sudo echo export "DBname=${var.db_name}" >> /etc/environment
               sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
               sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
-              sudo echo export "Profile=${var.profile}" >> /etc/environment
-              sudo echo export "Region=${var.vpc_region}" >> /etc/environment
               EOF
 
   tags = {
@@ -321,8 +307,8 @@ resource "aws_iam_policy" "WebAppS3" {
       ],
       "Effect": "Allow",
       "Resource": [
-        "arn:aws:s3:::webapp.naresh.agrawal",
-        "arn:aws:s3:::webapp.naresh.agrawal/*"
+        "arn:aws:s3:::${aws_s3_bucket.bucket.bucket}",
+        "arn:aws:s3:::${aws_s3_bucket.bucket.bucket}/*"
         ]
     }
   ]
