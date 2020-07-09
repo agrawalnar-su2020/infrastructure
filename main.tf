@@ -20,6 +20,11 @@ variable "deploy_bucket_name" {
   type = "string"
 }
 
+# image_bucket_name
+variable "image_bucket_name" {
+  type = "string"
+}
+
 # aws_account_ID
 variable "aws_account_ID" {
   type = "string"
@@ -32,6 +37,11 @@ variable "vpc_region" {
 
 # Database name
 variable "db_name" {
+  type = "string"
+}
+
+# Circle CI user
+variable "circleci_user" {
   type = "string"
 }
 
@@ -245,7 +255,7 @@ resource "aws_db_subnet_group" "rds-db-subnet" {
 
 # S3 bucket
 resource "aws_s3_bucket" "bucket" {
-  bucket        = "webapp.naresh.agrawall"
+  bucket        = "${var.image_bucket_name}"
   acl           = "private"
   force_destroy = true
 
@@ -568,19 +578,19 @@ EOF
 
 # IAM cicd user Policy attachment
 resource "aws_iam_user_policy_attachment" "CircleCI-Upload-To-S3-attach" {
-  user      = "cicd"
+  user      = "${var.circleci_user}"
   policy_arn = "${aws_iam_policy.CircleCI-Upload-To-S3.arn}"
 }
 
 # IAM cicd user Policy attachment
 resource "aws_iam_user_policy_attachment" "CircleCI-Code-Deploy-attach" {
-  user      = "cicd"
+  user      = "${var.circleci_user}"
   policy_arn = "${aws_iam_policy.CircleCI-Code-Deploy.arn}"
 }
 
 # IAM cicd user Policy attachment
 resource "aws_iam_user_policy_attachment" "circleci-ec2-ami-attach" {
-  user      = "cicd"
+  user      = "${var.circleci_user}"
   policy_arn = "${aws_iam_policy.circleci-ec2-ami.arn}"
 }
 
@@ -596,6 +606,20 @@ resource "aws_iam_policy_attachment" "CodeDeployEC2ServiceRole-attach" {
   name       = "CodeDeployEC2ServiceRole-attachment"
   roles      = ["${aws_iam_role.CodeDeployEC2ServiceRole.name}"]
   policy_arn = "${aws_iam_policy.CodeDeploy-EC2-S3.arn}"
+}
+
+# IAM CodeDeployEC2ServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "CloudWatchAgentServerPolicy-attach" {
+  name       = "CloudWatchAgentServerPolicy-attachment"
+  roles      = ["${aws_iam_role.CodeDeployEC2ServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+}
+
+# IAM CodeDeployEC2ServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "AmazonSSMManagedInstanceCore-attach" {
+  name       = "AmazonSSMManagedInstanceCore-attachment"
+  roles      = ["${aws_iam_role.CodeDeployEC2ServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 # IAM CodeDeployServiceRole Policy attachment
