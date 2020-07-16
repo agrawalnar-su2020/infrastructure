@@ -10,6 +10,16 @@ variable "vpc_name" {
   type = "string"
 }
 
+# Hosted zone id
+variable "hosted_zone_id" {
+  type = "string"
+}
+
+# Domain name
+variable "domain_name" {
+  type = "string"
+}
+
 # key_path
 variable "my_public_key" {
   type = "string"
@@ -40,6 +50,16 @@ variable "db_name" {
   type = "string"
 }
 
+# Database user name
+variable "db_user_name" {
+  type = "string"
+}
+
+# Database password
+variable "db_password" {
+  type = "string"
+}
+
 # Circle CI user
 variable "circleci_user" {
   type = "string"
@@ -54,11 +74,6 @@ variable "vpc_cidr" {
 variable "public_cidrs" {
   type = "list"
 }
-
-# # Private Subnet_cidrs
-# variable "private_cidrs" {
-#   type = "list"
-# }
 
 # AMI
 variable "ami" {
@@ -96,18 +111,6 @@ resource "aws_subnet" "public_subnet" {
   }
 }
 
-# # Private Subnet
-# resource "aws_subnet" "private_subnet" {
-#   count             = 2
-#   cidr_block        = "${var.private_cidrs[count.index]}"
-#   vpc_id            = "${aws_vpc.vpc.id}"
-#   availability_zone = "${data.aws_availability_zones.available.names[count.index]}"
-
-#   tags = {
-#     Name = "private-subnet.${count.index + 1}"
-#   }
-# }
-
 # Internet Gateway
 resource "aws_internet_gateway" "gw" {
   vpc_id = "${aws_vpc.vpc.id}"
@@ -131,15 +134,6 @@ resource "aws_route_table" "public_route" {
   }
 }
 
-# # Private Route Table
-# resource "aws_default_route_table" "private_route" {
-#   default_route_table_id = "${aws_vpc.vpc.default_route_table_id}"
-
-#   tags = {
-#     Name = "private-route-table"
-#   }
-# }
-
 # Associate Public Subnet with Public Route Table
 resource "aws_route_table_association" "public_subnet_assoc" {
   count          = length(data.aws_availability_zones.available.names) > 2 ? 3 : 2
@@ -147,12 +141,57 @@ resource "aws_route_table_association" "public_subnet_assoc" {
   subnet_id      = "${aws_subnet.public_subnet.*.id[count.index]}"
 }
 
-# # Associate Private Subnet with Private Route Table
-# resource "aws_route_table_association" "private_subnet_assoc" {
-#   count          = 2
-#   route_table_id = "${aws_default_route_table.private_route.id}"
-#   subnet_id      = "${aws_subnet.private_subnet.*.id[count.index]}"
-#  }
+# # Application Security Group
+# resource "aws_security_group" "application_security_group" {
+#   name        = "application_security_group"
+#   description = "Allow inbound traffic for application"
+#   vpc_id      = "${aws_vpc.vpc.id}"
+
+#   ingress {
+#     description = "SSH from VPC"
+#     from_port   = 22
+#     to_port     = 22
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   ingress {
+#     description = "80 from VPC"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   ingress {
+#     description = "TLS from VPC"
+#     from_port   = 443
+#     to_port     = 443
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   ingress {
+#     description = "8080 from VPC"
+#     from_port   = 8080
+#     to_port     = 8080
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+
+#   tags = {
+#     Name = "application_security_group"
+#   }
+
+# }
 
 # Application Security Group
 resource "aws_security_group" "application_security_group" {
@@ -165,15 +204,15 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.alb_security_group.id}"]
   }
 
   ingress {
-    description = "80 from VPC"
+    description = "Http"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.alb_security_group.id}"]
   }
 
   ingress {
@@ -181,7 +220,7 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.alb_security_group.id}"]
   }
 
   ingress {
@@ -189,16 +228,15 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    security_groups = ["${aws_security_group.alb_security_group.id}"]
   }
 
-  egress {
+    egress {
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
 
   tags = {
     Name = "application_security_group"
@@ -217,8 +255,8 @@ resource "aws_db_instance" "csye6225-su2020" {
   storage_type           = "gp2"
   allocated_storage      = 20
   name                   = "${var.db_name}"
-  username               = "root"
-  password               = "password"
+  username               = "${var.db_user_name}"
+  password               = "${var.db_password}"
   skip_final_snapshot    = "true"
   db_subnet_group_name   = "${aws_db_subnet_group.rds-db-subnet.name}"
   vpc_security_group_ids = ["${aws_security_group.database_security_group.id}"]
@@ -288,37 +326,38 @@ resource "aws_key_pair" "ssh_key" {
   public_key = "${var.my_public_key}"
 }
 
-# EC2 instance
-resource "aws_instance" "web" {
-  depends_on = [ aws_db_instance.csye6225-su2020 ]
-  ami                    = "${var.ami}"
-  instance_type          = "t2.micro"
-  key_name               = "${aws_key_pair.ssh_key.id}"
-  vpc_security_group_ids = ["${aws_security_group.application_security_group.id}"]
-  subnet_id              = "${aws_subnet.public_subnet[0].id}"
-  iam_instance_profile   = "${aws_iam_instance_profile.CodeDeployEC2ServiceRole-instance-profile.name}"
+# # EC2 instance without autoscaling and load balancer
+# resource "aws_instance" "web" {
+#   depends_on = [ aws_db_instance.csye6225-su2020 ]
+#   ami                    = "${var.ami}"
+#   instance_type          = "t2.micro"
+#   key_name               = "${aws_key_pair.ssh_key.id}"
+#   vpc_security_group_ids = ["${aws_security_group.application_security_group.id}"]
+#   subnet_id              = "${aws_subnet.public_subnet[0].id}"
+#   iam_instance_profile   = "${aws_iam_instance_profile.CodeDeployEC2ServiceRole-instance-profile.name}"
 
-  ebs_block_device {
-    device_name = "/dev/sda1"
-    volume_type = "gp2"
-    volume_size = "20"
-  }
+#   ebs_block_device {
+#     device_name = "/dev/sda1"
+#     volume_type = "gp2"
+#     volume_size = "20"
+#   }
 
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo echo export "Bucketname=${aws_s3_bucket.bucket.bucket}" >> /etc/environment
-              sudo echo export "Bucketendpoint=${aws_s3_bucket.bucket.bucket_regional_domain_name}" >> /etc/environment
-              sudo echo export "DBhost=${aws_db_instance.csye6225-su2020.address}" >> /etc/environment
-              sudo echo export "DBendpoint=${aws_db_instance.csye6225-su2020.endpoint}" >> /etc/environment
-              sudo echo export "DBname=${var.db_name}" >> /etc/environment
-              sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
-              sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
-              EOF
+#   user_data = <<-EOF
+#               #!/bin/bash
+#               sudo echo export "Bucketname=${aws_s3_bucket.bucket.bucket}" >> /etc/environment
+#               sudo echo export "Bucketendpoint=${aws_s3_bucket.bucket.bucket_regional_domain_name}" >> /etc/environment
+#               sudo echo export "DBhost=${aws_db_instance.csye6225-su2020.address}" >> /etc/environment
+#               sudo echo export "DBendpoint=${aws_db_instance.csye6225-su2020.endpoint}" >> /etc/environment
+#               sudo echo export "DBname=${var.db_name}" >> /etc/environment
+#               sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
+#               sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
+#               EOF
 
-  tags = {
-    Name = "Webapp_EC2"
-   }
-}
+#   tags = {
+#     Name = "Webapp_EC2"
+#    }
+# }
+
 # --------------------- IAM Policy-------------------------------------------------------------------------------------
 
 # IAM S3 image Pocily
@@ -493,31 +532,6 @@ EOF
 
 # -------------------------------------------------------IAM Role--------------------------------------------------------------------------------------------------
 
-# # IAM S3 image Role
-# resource "aws_iam_role" "EC2-CSYE6225" {
-#   name = "EC2-CSYE6225"
-
-#   assume_role_policy = <<EOF
-# {
-# "Version": "2012-10-17",
-# "Statement": [
-# {
-# "Action": "sts:AssumeRole",
-# "Principal": {
-#  "Service": "ec2.amazonaws.com",
-#  "Service": "s3.amazonaws.com"
-# },
-# "Effect": "Allow"
-# }
-# ]
-# }
-# EOF
-
-#   tags = {
-#     tag-key = "EC2-CSYE6225"
-#   }
-# }
-
 # IAM CodeDeployEC2ServiceRole Role
 resource "aws_iam_role" "CodeDeployEC2ServiceRole" {
   name = "CodeDeployEC2ServiceRole"
@@ -568,13 +582,6 @@ EOF
 }
 
 #----------------------------------------------------------Policy Attachment-----------------------------------------------------------------------------
-
-# # IAM EC2-CSYE6225 Policy attachment
-# resource "aws_iam_policy_attachment" "WebAppS3-attach" {
-#   name       = "WebAppS3-attachment"
-#   roles      = ["${aws_iam_role.EC2-CSYE6225.name}"]
-#   policy_arn = "${aws_iam_policy.WebAppS3.arn}"
-# }
 
 # IAM cicd user Policy attachment
 resource "aws_iam_user_policy_attachment" "CircleCI-Upload-To-S3-attach" {
@@ -629,12 +636,6 @@ resource "aws_iam_policy_attachment" "CodeDeployServiceRole-attach" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
 }
 
-# # IAM  EC2-CSYE6225 Profile Instance
-# resource "aws_iam_instance_profile" "EC2-CSYE6225-instance-profile" {
-#   name = "EC2-CSYE6225-instance-profile"
-#   role = "${aws_iam_role.EC2-CSYE6225.name}"
-# }
-
  # IAM  CodeDeployEC2ServiceRole Profile Instance
 resource "aws_iam_instance_profile" "CodeDeployEC2ServiceRole-instance-profile" {
   name = "CodeDeployEC2ServiceRole-instance-profile"
@@ -659,16 +660,19 @@ resource "aws_dynamodb_table" "dynamodb-table" {
 
 #--------------------------------------------------------------CodeDeploy-------------------------------------------------------------------------
 
+# Codedeploy Application
 resource "aws_codedeploy_app" "csye6225-webapp" {
   compute_platform = "Server"
   name             = "csye6225-webapp"
 }
 
+# Codedeploy deployment group
 resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
   app_name              = "${aws_codedeploy_app.csye6225-webapp.name}"
   deployment_group_name = "csye6225-webapp-deployment"
   service_role_arn      = "${aws_iam_role.CodeDeployServiceRole.arn}"
   deployment_config_name = "CodeDeployDefault.AllAtOnce"
+  autoscaling_groups    = ["${aws_autoscaling_group.autoscaling_group.name}"]
 
   deployment_style {
     deployment_option = "WITHOUT_TRAFFIC_CONTROL"
@@ -686,4 +690,213 @@ resource "aws_codedeploy_deployment_group" "csye6225-webapp-deployment" {
     events  = ["DEPLOYMENT_FAILURE"]
   }
 
+}
+
+#------------------------------------------------------Loadbalancer-----------------------------------------------------------------------------------
+
+# Taget Group
+resource "aws_lb_target_group" "alb-target-group" {
+  name        = "alb-target-group"
+  port        = 8080
+  protocol    = "HTTP"
+  target_type = "instance"
+  vpc_id      = "${aws_vpc.vpc.id}"
+  deregistration_delay = 20
+  
+    health_check {
+    interval            = 30
+    path                = "/"
+    protocol            = "HTTP"
+    timeout             = 10
+    healthy_threshold   = 2
+    unhealthy_threshold = 6
+    matcher = "200"
+  }
+  stickiness{
+    type = "lb_cookie"
+    enabled = "true"
+  }
+}
+
+# Application load balancer
+resource "aws_lb" "application_load_balancer" {
+  name     = "application-load-balancer"
+  internal = false
+  load_balancer_type = "application"
+  ip_address_type    = "ipv4"
+  security_groups = ["${aws_security_group.alb_security_group.id}"]
+  subnets = ["${aws_subnet.public_subnet[0].id}","${aws_subnet.public_subnet[1].id}","${aws_subnet.public_subnet[2].id}"]
+
+  tags = {
+    Name = "application-load-balancer"
+  }
+
+ 
+}
+
+# Alb Security group
+ resource "aws_security_group" "alb_security_group" {
+  name        = "alb_security_group"
+  vpc_id      = "${aws_vpc.vpc.id}"
+
+ ingress {
+    description = "80 from VPC"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+   
+  egress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+   tags = {
+    Name = "alb_security_group"
+  }
+
+}
+
+# alb listener
+resource "aws_lb_listener" "alb-listner" {
+  load_balancer_arn = "${aws_lb.application_load_balancer.arn}"
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = "${aws_lb_target_group.alb-target-group.arn}"
+  }
+}
+
+#-----------------------------------Auto scaling--------------------------------------------------------------------------------------------------------
+
+# launch Configuration
+resource "aws_launch_configuration" "asg_launch_config" {
+  depends_on = [ aws_db_instance.csye6225-su2020 ]
+  name          = "asg_launch_config"
+  image_id      = "${var.ami}"
+  instance_type = "t2.micro"
+  security_groups = ["${aws_security_group.application_security_group.id}"]
+  key_name      = "${aws_key_pair.ssh_key.id}"
+  associate_public_ip_address = true
+  iam_instance_profile   = "${aws_iam_instance_profile.CodeDeployEC2ServiceRole-instance-profile.name}"
+
+   root_block_device {
+    volume_type = "gp2"
+    volume_size = "20"
+  }
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo echo export "Bucketname=${aws_s3_bucket.bucket.bucket}" >> /etc/environment
+              sudo echo export "Bucketendpoint=${aws_s3_bucket.bucket.bucket_regional_domain_name}" >> /etc/environment
+              sudo echo export "DBhost=${aws_db_instance.csye6225-su2020.address}" >> /etc/environment
+              sudo echo export "DBendpoint=${aws_db_instance.csye6225-su2020.endpoint}" >> /etc/environment
+              sudo echo export "DBname=${var.db_name}" >> /etc/environment
+              sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
+              sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
+              EOF
+
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# AutoScaling Group
+resource "aws_autoscaling_group" "autoscaling_group" {
+  name                 = "autoscaling_group"
+  launch_configuration = "${aws_launch_configuration.asg_launch_config.name}"
+  vpc_zone_identifier  = ["${aws_subnet.public_subnet[0].id}","${aws_subnet.public_subnet[1].id}","${aws_subnet.public_subnet[2].id}"]
+  target_group_arns    = ["${aws_lb_target_group.alb-target-group.arn}"]
+  default_cooldown     = 60
+  desired_capacity     = 2
+  min_size = 2
+  max_size = 5
+  health_check_type = "EC2"
+
+  tag {
+    key                 = "Name"
+    value               = "Webapp_EC2"
+    propagate_at_launch = true
+  }
+}
+
+#------------------------------------------------------------AUTOSCALING POLICY---------------------------------------------------------------------
+
+# WebServerScaleUpPolicy
+resource "aws_autoscaling_policy" "WebServerScaleUpPolicy" {
+  name                   = "WebServerScaleUpPolicy"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = "${aws_autoscaling_group.autoscaling_group.name}"
+}
+
+# WebServerScaleDownPolicy
+resource "aws_autoscaling_policy" "WebServerScaleDownPolicy" {
+  name                   = "WebServerScaleDownPolicy"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 60
+  autoscaling_group_name = "${aws_autoscaling_group.autoscaling_group.name}"
+}
+
+#-------------------------------------Cloudwatch metric alarm-----------------------------------------------------------------------------------------
+
+# CPUAlarmHigh
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
+  alarm_name          = "CPUAlarmHigh"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "5"
+
+  dimensions = {
+    AutoScalingGroupName = "${aws_autoscaling_group.autoscaling_group.name}"
+  }
+
+  alarm_description = "Scale-up if CPU 5 > % for 1 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.WebServerScaleUpPolicy.arn}"]
+}
+
+# CPUAlarmLow
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
+  alarm_name          = "CPUAlarmLow"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "1"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "60"
+  statistic           = "Average"
+  threshold           = "3"
+
+  dimensions = {
+    AutoScalingGroupName = "${aws_autoscaling_group.autoscaling_group.name}"
+  }
+
+  alarm_description = "Scale-down if CPU < 3% for 1 minutes"
+  alarm_actions     = ["${aws_autoscaling_policy.WebServerScaleDownPolicy.arn}"]
+}
+
+#----------------------------------Route53------------------------------------------------------------------------------------------------------------
+
+# Route 53 record
+resource "aws_route53_record" "www" {
+  zone_id = "${var.hosted_zone_id}"
+  name    = "${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = "${aws_lb.application_load_balancer.dns_name}"
+    zone_id                = "${aws_lb.application_load_balancer.zone_id}"
+    evaluate_target_health = true
+  }
 }
