@@ -787,7 +787,7 @@ resource "aws_launch_configuration" "asg_launch_config" {
 
    root_block_device {
     volume_type = "gp2"
-    volume_size = "20"
+    volume_size = "25"
   }
 
   user_data = <<-EOF
