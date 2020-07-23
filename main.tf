@@ -200,14 +200,6 @@ resource "aws_security_group" "application_security_group" {
   vpc_id      = "${aws_vpc.vpc.id}"
 
   ingress {
-    description = "SSH from VPC"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    security_groups = ["${aws_security_group.alb_security_group.id}"]
-  }
-
-  ingress {
     description = "Http"
     from_port   = 80
     to_port     = 80
@@ -410,6 +402,30 @@ resource "aws_iam_policy" "CircleCI-Upload-To-S3" {
 EOF
 }
 
+# IAM CircleCI-lambda Pocily
+resource "aws_iam_policy" "CircleCI-lambda" {
+  name = "CircleCI-lambda"
+  
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "lambda:AddPermission",
+        "lambda:PutFunctionConcurrency",
+        "lambda:UpdateFunctionCode"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:lambda:${var.vpc_region}:${var.aws_account_ID}:function:*"
+        ]
+    }
+  ]
+}
+EOF
+}
+
 # IAM CircleCI-Code-Deploy Pocily
 resource "aws_iam_policy" "CircleCI-Code-Deploy" {
   name = "CircleCI-Code-Deploy"
@@ -530,6 +546,29 @@ resource "aws_iam_policy" "CodeDeploy-EC2-S3" {
 EOF
 }
 
+# IAM EC2 Publish SNS Pocily
+resource "aws_iam_policy" "EC2-Publish-SNS" {
+  name = "EC2-Publish-SNS"
+  
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": [
+        "sns:Publish",
+				"sns:CreateTopic"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+          "arn:aws:sns:${var.vpc_region}:${var.aws_account_ID}:password_reset"
+        ]
+    }
+  ]
+}
+EOF
+}
+
 # -------------------------------------------------------IAM Role--------------------------------------------------------------------------------------------------
 
 # IAM CodeDeployEC2ServiceRole Role
@@ -581,6 +620,30 @@ EOF
   }
 }
 
+# IAM LambdaServiceRole Role
+resource "aws_iam_role" "LambdaServiceRole" {
+  name = "LambdaServiceRole"
+
+  assume_role_policy = <<EOF
+{
+"Version": "2012-10-17",
+"Statement": [
+{
+"Action": "sts:AssumeRole",
+"Principal": {
+ "Service": "lambda.amazonaws.com"
+},
+"Effect": "Allow"
+}
+]
+}
+EOF
+
+  tags = {
+    tag-key = "LambdaServiceRole"
+  }
+}
+
 #----------------------------------------------------------Policy Attachment-----------------------------------------------------------------------------
 
 # IAM cicd user Policy attachment
@@ -599,6 +662,12 @@ resource "aws_iam_user_policy_attachment" "CircleCI-Code-Deploy-attach" {
 resource "aws_iam_user_policy_attachment" "circleci-ec2-ami-attach" {
   user      = "${var.circleci_user}"
   policy_arn = "${aws_iam_policy.circleci-ec2-ami.arn}"
+}
+
+# IAM cicd user Policy attachment
+resource "aws_iam_user_policy_attachment" "CircleCI-lambda-attach" {
+  user      = "${var.circleci_user}"
+  policy_arn = "${aws_iam_policy.CircleCI-lambda.arn}"
 }
 
 # IAM CodeDeployEC2ServiceRole Policy attachment
@@ -629,11 +698,53 @@ resource "aws_iam_policy_attachment" "AmazonSSMManagedInstanceCore-attach" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# IAM CodeDeployEC2ServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "EC2-Publish-SNS-attach" {
+  name       = "EC2-Publish-SNS-attachment"
+  roles      = ["${aws_iam_role.CodeDeployEC2ServiceRole.name}"]
+  policy_arn = "${aws_iam_policy.EC2-Publish-SNS.arn}"
+}
+
 # IAM CodeDeployServiceRole Policy attachment
 resource "aws_iam_policy_attachment" "CodeDeployServiceRole-attach" {
   name       = "CodeDeployServiceRole-attachment"
   roles      = ["${aws_iam_role.CodeDeployServiceRole.name}"]
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+}
+
+# IAM LambdaServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "AmazonSESFullAccess-attach" {
+  name       = "AmazonSESFullAccess-attachment"
+  roles      = ["${aws_iam_role.LambdaServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSESFullAccess"
+}
+
+# IAM LambdaServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "AWSLambdaBasicExecutionRole-attach" {
+  name       = "AWSLambdaBasicExecutionRole-attachment"
+  roles      = ["${aws_iam_role.LambdaServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+# IAM LambdaServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "AmazonDynamoDBFullAccess-attach" {
+  name       = "AmazonDynamoDBFullAccess-attachment"
+  roles      = ["${aws_iam_role.LambdaServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+}
+
+# IAM LambdaServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "AmazonSNSFullAccess-attach" {
+  name       = "AmazonSNSFullAccess-attachment"
+  roles      = ["${aws_iam_role.LambdaServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+}
+
+# IAM LambdaServiceRole Policy attachment
+resource "aws_iam_policy_attachment" "CloudWatchAgentServerPolicy-lambda-attach" {
+  name       = "CloudWatchAgentServerPolicy-lambda-attachment"
+  roles      = ["${aws_iam_role.LambdaServiceRole.name}"]
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
  # IAM  CodeDeployEC2ServiceRole Profile Instance
@@ -648,13 +759,18 @@ resource "aws_iam_instance_profile" "CodeDeployEC2ServiceRole-instance-profile" 
 resource "aws_dynamodb_table" "dynamodb-table" {
   name     = "csye6225"
   billing_mode   = "PROVISIONED"
-  read_capacity  = 20
-  write_capacity = 20
+  read_capacity  = 5
+  write_capacity = 5
   hash_key = "id"
 
   attribute {
     name = "id"
     type = "S"
+  }
+
+  ttl {
+    attribute_name = "expiration"
+    enabled        = true
   }
 }
 
@@ -799,6 +915,7 @@ resource "aws_launch_configuration" "asg_launch_config" {
               sudo echo export "DBname=${var.db_name}" >> /etc/environment
               sudo echo export "DBusername=${aws_db_instance.csye6225-su2020.username}" >> /etc/environment
               sudo echo export "DBpassword=${aws_db_instance.csye6225-su2020.password}" >> /etc/environment
+              sudo echo export "snstopic=${aws_sns_topic.password_reset.arn}" >> /etc/environment
               EOF
 
 
@@ -899,4 +1016,47 @@ resource "aws_route53_record" "www" {
     zone_id                = "${aws_lb.application_load_balancer.zone_id}"
     evaluate_target_health = true
   }
+}
+
+#--------------------------------------------SNS-----------------------------------------------------------------------
+
+# SNS Topic 
+resource "aws_sns_topic" "password_reset" {
+  name = "password_reset"
+  display_name = "password_reset"
+  }
+
+# SNS Subscription
+resource "aws_sns_topic_subscription" "password_reset_target" {
+  topic_arn = "${aws_sns_topic.password_reset.arn}"
+  protocol  = "lambda"
+  endpoint  = "${aws_lambda_function.lambda_function.arn}"
+}
+
+#-------------------------------------------------Lambda-----------------------------------------------------------------
+
+# Lambda function
+resource "aws_lambda_function" "lambda_function" {
+  function_name = "password_reset"
+  filename      = "/home/naresh/lambda.zip"
+  role          = "${aws_iam_role.LambdaServiceRole.arn}"
+  memory_size   = "256"
+  timeout       = "900"
+  handler       = "lambda.EmailHandler::handleRequest"
+  runtime       = "java8"
+  
+  environment {
+    variables = {
+      domain = "${var.domain_name}"
+    }
+  }
+}
+
+# Lambda Permission
+resource "aws_lambda_permission" "lambda_permission" {
+  statement_id  = "AllowExecutionFromSNS"
+  action        = "lambda:InvokeFunction"
+  function_name = "${aws_lambda_function.lambda_function.function_name}"
+  principal     = "sns.amazonaws.com"
+  source_arn    = "${aws_sns_topic.password_reset.arn}"
 }
