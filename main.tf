@@ -20,6 +20,12 @@ variable "domain_name" {
   type = "string"
 }
 
+# SSL Certi ARN
+variable "SSL_ARN" {
+  type = "string"
+}
+
+
 # key_path
 variable "my_public_key" {
   type = "string"
@@ -199,16 +205,24 @@ resource "aws_security_group" "application_security_group" {
   description = "Allow inbound traffic for application"
   vpc_id      = "${aws_vpc.vpc.id}"
 
-  ingress {
-    description = "Http"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    security_groups = ["${aws_security_group.alb_security_group.id}"]
-  }
+  # ingress {
+  #   description = "SSH from VPC"
+  #   from_port   = 22
+  #   to_port     = 22
+  #   protocol    = "tcp"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
+  
+  # ingress {
+  #   description = "Http"
+  #   from_port   = 80
+  #   to_port     = 80
+  #   protocol    = "tcp"
+  #   security_groups = ["${aws_security_group.alb_security_group.id}"]
+  # }
 
   ingress {
-    description = "TLS from VPC"
+    description = "TLS from load balancer"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -216,7 +230,7 @@ resource "aws_security_group" "application_security_group" {
   }
 
   ingress {
-    description = "8080 from VPC"
+    description = "8080 from load balancer"
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
@@ -241,9 +255,11 @@ resource "aws_security_group" "application_security_group" {
 # RDS instance
 resource "aws_db_instance" "csye6225-su2020" {
   identifier             = "csye6225-su2020"
-  instance_class         = "db.t2.micro"
+  instance_class         = "db.t3.micro"
   engine                 = "mysql"
   multi_az               = "false"
+  storage_encrypted      = "true"
+  ca_cert_identifier     = "rds-ca-2019"
   storage_type           = "gp2"
   allocated_storage      = 20
   name                   = "${var.db_name}"
@@ -252,8 +268,20 @@ resource "aws_db_instance" "csye6225-su2020" {
   skip_final_snapshot    = "true"
   db_subnet_group_name   = "${aws_db_subnet_group.rds-db-subnet.name}"
   vpc_security_group_ids = ["${aws_security_group.database_security_group.id}"]
+  parameter_group_name   = "${aws_db_parameter_group.csye6225-su2020-pg.name}"
 }
 
+# RDS Parameter Group
+resource "aws_db_parameter_group" "csye6225-su2020-pg" {
+  name   = "csye6225-su2020-pg"
+  family = "mysql8.0"
+
+  parameter {
+    name  = "performance_schema"
+    value = "1"
+    apply_method = "pending-reboot"
+  }
+}
 
 # Database security group
 resource "aws_security_group" "database_security_group" {
@@ -855,10 +883,18 @@ resource "aws_lb" "application_load_balancer" {
   name        = "alb_security_group"
   vpc_id      = "${aws_vpc.vpc.id}"
 
- ingress {
-    description = "80 from VPC"
-    from_port   = 80
-    to_port     = 80
+#  ingress {
+#     description = "80 from VPC"
+#     from_port   = 80
+#     to_port     = 80
+#     protocol    = "tcp"
+#     cidr_blocks = ["0.0.0.0/0"]
+#   }
+
+   ingress {
+    description = "443 from VPC"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -879,8 +915,9 @@ resource "aws_lb" "application_load_balancer" {
 # alb listener
 resource "aws_lb_listener" "alb-listner" {
   load_balancer_arn = "${aws_lb.application_load_balancer.arn}"
-  port              = 80
-  protocol          = "HTTP"
+  port              = 443
+  protocol          = "HTTPS"
+  certificate_arn   = "${var.SSL_ARN}"
 
   default_action {
     type             = "forward"
